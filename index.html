@@ -3,20 +3,19 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sig-Fig Master: Motion Control</title>
+    <title>เกมส์นับจำนวนเลขนัยสำคัญ (AI Face Control)</title>
+    
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- MediaPipe Hands & Camera -->
+    
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@400;600;800&display=swap" rel="stylesheet">
+    
+    <!-- MediaPipe AI Libraries -->
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
-    <!-- Canvas Confetti for Effects -->
-    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js" crossorigin="anonymous"></script>
 
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Prompt:wght@400;600;800&display=swap');
-        
         body {
             font-family: 'Prompt', sans-serif;
             background-color: #0f172a;
@@ -25,680 +24,459 @@
             margin: 0;
             padding: 0;
         }
+        
+        #game-area {
+            position: relative;
+            width: 100%;
+            max-width: 900px;
+            aspect-ratio: 16/9; /* Standard webcam aspect ratio */
+            margin: 0 auto;
+            background-color: #000;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+            border-radius: 1rem;
+            overflow: hidden;
+            transition: background-color 0.2s ease;
+        }
+
+        #webcam {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transform: scaleX(-1); /* Mirror camera */
+            opacity: 0.35;
+            z-index: 0;
+        }
+
+        .ui-layer {
+            position: absolute;
+            inset: 0;
+            z-index: 10;
+            display: flex;
+            flex-direction: column;
+            padding: 1.5rem;
+        }
+
+        #cursor {
+            position: absolute;
+            z-index: 50;
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            background-color: #fbbf24;
+            border: 3px solid white;
+            box-shadow: 0 0 10px rgba(0,0,0,0.5);
+            transform: translate(-50%, -50%);
+            pointer-events: none;
+            transition: transform 0.1s, background-color 0.1s;
+            display: none;
+        }
+
+        #cursor.mouth-open {
+            transform: translate(-50%, -50%) scale(1.8);
+            background-color: #4ade80;
+            border-color: #166534;
+        }
 
         .glass-panel {
             background: rgba(255, 255, 255, 0.1);
             backdrop-filter: blur(10px);
-            -webkit-backdrop-filter: blur(10px);
             border: 1px solid rgba(255, 255, 255, 0.2);
-            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
         }
 
-        .choice-btn {
-            transition: all 0.2s ease-in-out;
-            position: relative;
-            overflow: hidden;
+        .clickable-btn {
+            transition: all 0.2s ease;
         }
-
-        .choice-btn.hovered {
+        .clickable-btn:hover, .clickable-btn.simulated-hover {
             transform: scale(1.05);
-            background: rgba(255, 255, 255, 0.2);
-            border-color: #38bdf8;
-            box-shadow: 0 0 20px rgba(56, 189, 248, 0.5);
+            background-color: rgba(255, 255, 255, 0.25);
         }
-
-        .progress-bar {
-            position: absolute;
-            bottom: 0;
-            left: 0;
-            height: 10px;
-            background-color: #38bdf8;
-            width: 0%;
-            transition: width 0.1s linear;
+        .clickable-btn:active, .clickable-btn.simulated-active {
+            transform: scale(0.95);
         }
-
-        .neon-text {
-            text-shadow: 0 0 10px rgba(56, 189, 248, 0.8), 0 0 20px rgba(56, 189, 248, 0.6);
-        }
-
-        .neon-text-red {
-            text-shadow: 0 0 10px rgba(248, 113, 113, 0.8), 0 0 20px rgba(248, 113, 113, 0.6);
-        }
-
-        .neon-text-green {
-            text-shadow: 0 0 10px rgba(74, 222, 128, 0.8), 0 0 20px rgba(74, 222, 128, 0.6);
-        }
-
-        /* Animations */
-        @keyframes shake {
-            0% { transform: translate(1px, 1px) rotate(0deg); }
-            10% { transform: translate(-1px, -2px) rotate(-1deg); }
-            20% { transform: translate(-3px, 0px) rotate(1deg); }
-            30% { transform: translate(3px, 2px) rotate(0deg); }
-            40% { transform: translate(1px, -1px) rotate(1deg); }
-            50% { transform: translate(-1px, 2px) rotate(-1deg); }
-            60% { transform: translate(-3px, 1px) rotate(0deg); }
-            70% { transform: translate(3px, 1px) rotate(-1deg); }
-            80% { transform: translate(-1px, -1px) rotate(1deg); }
-            90% { transform: translate(1px, 2px) rotate(0deg); }
-            100% { transform: translate(1px, -2px) rotate(-1deg); }
-        }
-        .shake-effect { animation: shake 0.5s; }
-
-        @keyframes flashRed {
-            0% { box-shadow: inset 0 0 0 0 rgba(239, 68, 68, 0); }
-            50% { box-shadow: inset 0 0 100px 20px rgba(239, 68, 68, 0.8); }
-            100% { box-shadow: inset 0 0 0 0 rgba(239, 68, 68, 0); }
-        }
-        .flash-red-effect { animation: flashRed 0.6s ease-out; }
-
-        @keyframes flashGreen {
-            0% { box-shadow: inset 0 0 0 0 rgba(34, 197, 94, 0); }
-            50% { box-shadow: inset 0 0 100px 20px rgba(34, 197, 94, 0.8); }
-            100% { box-shadow: inset 0 0 0 0 rgba(34, 197, 94, 0); }
-        }
-        .flash-green-effect { animation: flashGreen 0.6s ease-out; }
-
-        @keyframes floatUp {
-            0% { opacity: 1; transform: translateY(0) scale(1); }
-            100% { opacity: 0; transform: translateY(-100px) scale(1.5); }
-        }
-        .float-up-effect {
-            position: absolute;
-            color: #4ade80;
-            font-weight: bold;
-            font-size: 3rem;
-            pointer-events: none;
-            animation: floatUp 1s ease-out forwards;
-            z-index: 50;
-        }
-
-        @keyframes floatDown {
-            0% { opacity: 1; transform: translateY(0) scale(1); }
-            100% { opacity: 0; transform: translateY(100px) scale(1.5); }
-        }
-        .float-down-effect {
-            position: absolute;
-            color: #ef4444;
-            font-weight: bold;
-            font-size: 3rem;
-            pointer-events: none;
-            animation: floatDown 1s ease-out forwards;
-            z-index: 50;
-        }
-
-        /* Loader */
-        .loader {
-            border: 8px solid rgba(255,255,255,0.1);
-            border-left-color: #38bdf8;
+        
+        /* Loading Spinner */
+        .spinner {
+            border: 4px solid rgba(255, 255, 255, 0.3);
             border-radius: 50%;
-            width: 50px;
-            height: 50px;
+            border-top: 4px solid #38bdf8;
+            width: 40px;
+            height: 40px;
             animation: spin 1s linear infinite;
         }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
     </style>
 </head>
-<body class="w-screen h-screen flex justify-center items-center">
-
-    <!-- Video Feed (Hidden, used for processing) -->
-    <video id="input_video" class="hidden" autoplay playsinline></video>
+<body class="h-screen w-screen flex items-center justify-center p-4">
 
     <!-- Main Game Container -->
-    <div id="game_container" class="relative w-full h-full max-w-6xl max-h-[900px] overflow-hidden sm:rounded-2xl shadow-2xl bg-black">
+    <div id="game-area" class="border-4 border-slate-700">
+        <!-- Webcam Feed -->
+        <video id="webcam" autoplay playsinline></video>
         
-        <!-- Canvas for Camera Output & Hand Landmarks -->
-        <canvas id="output_canvas" class="absolute top-0 left-0 w-full h-full object-cover" style="transform: scaleX(-1);"></canvas>
-        <div id="overlay_darken" class="absolute top-0 left-0 w-full h-full bg-black/40 pointer-events-none"></div>
+        <!-- AI Cursor -->
+        <div id="cursor"></div>
 
-        <!-- UI Layer -->
-        <div id="ui_layer" class="absolute top-0 left-0 w-full h-full z-10 pointer-events-none flex flex-col">
-            
-            <!-- ====== SCREEN 1: START ====== -->
-            <div id="screen_start" class="w-full h-full flex flex-col items-center justify-center bg-slate-900/90 pointer-events-auto backdrop-blur-sm transition-opacity duration-500">
-                <div class="glass-panel p-10 rounded-3xl text-center max-w-2xl transform scale-100 hover:scale-105 transition-transform duration-300">
-                    <h1 class="text-6xl font-extrabold mb-4 neon-text text-sky-400">Sig-Fig Master</h1>
-                    <h2 class="text-2xl font-semibold mb-6 text-sky-200">Motion Control Quiz</h2>
-                    <p class="text-lg text-slate-300 mb-8 leading-relaxed">
-                        ทดสอบความแม่นยำในการนับจำนวนเลขนัยสำคัญ<br>
-                        <span class="text-amber-400 font-bold">ใช้ "กล้องเว็บแคม"</span> เพื่อเล่น ยกมือขึ้นและใช้นิ้วชี้<br> เลื่อนไปทับคำตอบที่ถูกต้องค้างไว้ 1.5 วินาที<br>
-                        <br>
-                        ✅ <span class="text-green-400">ตอบถูก: +2 คะแนน</span><br>
-                        ❌ <span class="text-red-400">ตอบผิด: ลบเวลา 5 วินาที</span><br>
-                        ⏱️ <span class="text-sky-400">เวลาเริ่มต้น: 30 วินาที</span>
-                    </p>
-                    
-                    <div id="loading_ai" class="flex flex-col items-center mb-6">
-                        <div class="loader mb-4"></div>
-                        <p class="text-sky-300 animate-pulse">กำลังโหลด AI กล้องและระบบ...</p>
-                    </div>
+        <!-- 1. Loading Screen -->
+        <div id="ui-loading" class="ui-layer justify-center items-center text-center">
+            <div class="spinner mb-4"></div>
+            <h2 class="text-2xl font-semibold text-sky-300">กำลังโหลดโมเดล AI...</h2>
+            <p class="text-slate-400 mt-2">กรุณาอนุญาตการเข้าถึงกล้องเว็บแคมของคุณ</p>
+        </div>
 
-                    <button id="btn_start" class="hidden group relative px-8 py-4 bg-sky-500 hover:bg-sky-400 text-white font-bold text-2xl rounded-full overflow-hidden shadow-[0_0_20px_rgba(56,189,248,0.5)] transition-all">
-                        <span class="relative z-10">เริ่มเกมส์เลย!</span>
-                        <div class="absolute inset-0 h-full w-0 bg-white/20 transition-all duration-300 ease-out group-hover:w-full z-0"></div>
-                    </button>
-                </div>
-            </div>
-
-            <!-- ====== SCREEN 2: GAMEPLAY ====== -->
-            <div id="screen_game" class="hidden w-full h-full relative">
-                <!-- Top Info Bar -->
-                <div class="absolute top-4 left-4 right-4 flex justify-between items-start pointer-events-none">
-                    <div class="glass-panel px-6 py-3 rounded-2xl flex items-center gap-3">
-                        <span class="text-xl text-slate-300">คะแนน</span>
-                        <span id="score_display" class="text-4xl font-bold text-yellow-400 neon-text">0</span>
-                    </div>
-                    <div class="glass-panel px-6 py-3 rounded-2xl flex items-center gap-3">
-                        <span class="text-xl text-slate-300">เวลา</span>
-                        <span id="time_display" class="text-4xl font-bold text-sky-400 neon-text w-16 text-right">30</span>
-                    </div>
-                </div>
-
-                <!-- Central Question -->
-                <div class="absolute top-[30%] left-1/2 transform -translate-x-1/2 -translate-y-1/2 pointer-events-none w-full px-10 text-center z-10">
-                    <div id="question_box" class="glass-panel inline-block px-10 py-8 rounded-3xl transition-transform duration-300">
-                        <p id="question_text" class="text-5xl md:text-6xl font-bold text-white drop-shadow-lg">คำถาม?</p>
-                        <p class="text-xl text-sky-300 mt-4 animate-pulse">เอานิ้วชี้ไปวางที่คำตอบค้างไว้!</p>
-                    </div>
-                </div>
-
-                <!-- 4 Choices (Row aligned at bottom) -->
-                <div class="absolute bottom-12 left-0 w-full flex justify-center items-center gap-4 px-8 pointer-events-none z-10">
-                    <div id="choice_0" class="choice-btn glass-panel flex-1 max-w-[250px] h-32 md:h-40 rounded-2xl flex items-center justify-center pointer-events-none">
-                        <span class="choice-text text-3xl md:text-5xl font-bold text-white drop-shadow-md z-10">A</span>
-                        <div class="progress-bar"></div>
-                    </div>
-                    <div id="choice_1" class="choice-btn glass-panel flex-1 max-w-[250px] h-32 md:h-40 rounded-2xl flex items-center justify-center pointer-events-none">
-                        <span class="choice-text text-3xl md:text-5xl font-bold text-white drop-shadow-md z-10">B</span>
-                        <div class="progress-bar"></div>
-                    </div>
-                    <div id="choice_2" class="choice-btn glass-panel flex-1 max-w-[250px] h-32 md:h-40 rounded-2xl flex items-center justify-center pointer-events-none">
-                        <span class="choice-text text-3xl md:text-5xl font-bold text-white drop-shadow-md z-10">C</span>
-                        <div class="progress-bar"></div>
-                    </div>
-                    <div id="choice_3" class="choice-btn glass-panel flex-1 max-w-[250px] h-32 md:h-40 rounded-2xl flex items-center justify-center pointer-events-none">
-                        <span class="choice-text text-3xl md:text-5xl font-bold text-white drop-shadow-md z-10">D</span>
-                        <div class="progress-bar"></div>
-                    </div>
-                </div>
-
-                <!-- Cursor indicator -->
-                <div id="hand_cursor" class="absolute w-8 h-8 bg-sky-400 rounded-full blur-[2px] opacity-80 mix-blend-screen pointer-events-none transform -translate-x-1/2 -translate-y-1/2 hidden z-50 shadow-[0_0_20px_#38bdf8]"></div>
+        <!-- 2. Start Screen -->
+        <div id="ui-start" class="ui-layer justify-center items-center text-center hidden">
+            <div class="glass-panel p-8 rounded-2xl max-w-lg w-full">
+                <h1 class="text-4xl font-bold text-white mb-2 shadow-sm">เกมนับเลขนัยสำคัญ</h1>
+                <p class="text-sky-300 font-semibold mb-6">ท้าทายสมอง ประลองความไวใน 45 วินาที</p>
                 
-                <!-- Floating Effects Container -->
-                <div id="effects_container" class="absolute top-0 left-0 w-full h-full pointer-events-none z-40 overflow-hidden"></div>
-            </div>
+                <div class="bg-slate-800/50 rounded-xl p-4 mb-8 text-left text-sm space-y-2">
+                    <p>🎯 <strong>วิธีเล่น:</strong></p>
+                    <p>1. ขยับศีรษะให้ <span class="text-yellow-400">จุดสีเหลือง (ปลายจมูก)</span> ชี้ไปที่ปุ่มคำตอบ</p>
+                    <p>2. <span class="text-green-400 font-bold">อ้าปากกว้างๆ</span> เพื่อทำการ "คลิก" ยืนยันคำตอบ</p>
+                </div>
 
-            <!-- ====== SCREEN 3: END ====== -->
-            <div id="screen_end" class="hidden w-full h-full flex flex-col items-center justify-center bg-slate-900/95 pointer-events-auto backdrop-blur-md">
-                <div class="glass-panel p-12 rounded-3xl text-center max-w-lg transform scale-100">
-                    <h1 class="text-6xl font-extrabold mb-4 neon-text-red">หมดเวลา!</h1>
-                    <p class="text-2xl text-slate-300 mb-6">คุณทำคะแนนได้</p>
-                    <div class="text-8xl font-black text-yellow-400 neon-text mb-10" id="final_score">0</div>
-                    
-                    <button id="btn_restart" class="group relative px-8 py-4 bg-emerald-500 hover:bg-emerald-400 text-white font-bold text-2xl rounded-full overflow-hidden shadow-[0_0_20px_rgba(16,185,129,0.5)] transition-all">
-                        <span class="relative z-10">เล่นอีกครั้ง</span>
-                        <div class="absolute inset-0 h-full w-0 bg-white/20 transition-all duration-300 ease-out group-hover:w-full z-0"></div>
-                    </button>
+                <button id="btn-start" class="clickable-btn bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-400 hover:to-blue-500 text-white font-bold py-4 px-12 rounded-full text-xl shadow-lg border border-sky-400 w-full">
+                    เริ่มเกมส์ (อ้าปากคลิกได้เลย)
+                </button>
+            </div>
+        </div>
+
+        <!-- 3. Playing Screen -->
+        <div id="ui-playing" class="ui-layer hidden flex-col justify-between">
+            <!-- Header Stats -->
+            <div class="flex justify-between items-center glass-panel px-6 py-3 rounded-xl">
+                <div class="text-2xl font-bold text-white">
+                    ⏱️ เวลา: <span id="time" class="text-rose-400">45</span>
+                </div>
+                <div class="text-2xl font-bold text-white">
+                    ⭐ คะแนน: <span id="score" class="text-yellow-400">0</span>
                 </div>
             </div>
 
+            <!-- Question Display -->
+            <div class="flex-grow flex flex-col items-center justify-center">
+                <p class="text-slate-300 text-lg mb-2">จำนวนเลขนัยสำคัญของตัวเลขนี้คือเท่าใด?</p>
+                <div id="question" class="text-7xl md:text-8xl font-black text-white drop-shadow-[0_5px_5px_rgba(0,0,0,0.8)] tracking-wider">
+                    0.00
+                </div>
+            </div>
+
+            <!-- Answers Grid (1 to 6) -->
+            <div class="grid grid-cols-3 gap-4 pb-4">
+                <button class="clickable-btn ans-btn glass-panel text-white font-bold text-4xl py-6 rounded-xl border-2 border-white/20" data-ans="1">1</button>
+                <button class="clickable-btn ans-btn glass-panel text-white font-bold text-4xl py-6 rounded-xl border-2 border-white/20" data-ans="2">2</button>
+                <button class="clickable-btn ans-btn glass-panel text-white font-bold text-4xl py-6 rounded-xl border-2 border-white/20" data-ans="3">3</button>
+                <button class="clickable-btn ans-btn glass-panel text-white font-bold text-4xl py-6 rounded-xl border-2 border-white/20" data-ans="4">4</button>
+                <button class="clickable-btn ans-btn glass-panel text-white font-bold text-4xl py-6 rounded-xl border-2 border-white/20" data-ans="5">5</button>
+                <button class="clickable-btn ans-btn glass-panel text-white font-bold text-4xl py-6 rounded-xl border-2 border-white/20" data-ans="6">6</button>
+            </div>
+        </div>
+
+        <!-- 4. End Screen -->
+        <div id="ui-end" class="ui-layer justify-center items-center text-center hidden">
+            <div class="glass-panel p-10 rounded-3xl max-w-md w-full">
+                <h1 class="text-5xl font-black text-rose-500 mb-2">หมดเวลา!</h1>
+                <p class="text-xl text-slate-300 mb-6">เก่งมาก! นี่คือคะแนนของคุณ</p>
+                
+                <div class="bg-black/40 rounded-2xl py-6 px-10 mb-8 inline-block border border-yellow-500/50 shadow-[0_0_20px_rgba(234,179,8,0.3)]">
+                    <span id="final-score" class="text-7xl font-bold text-yellow-400">15</span>
+                    <span class="text-2xl text-slate-300 ml-2">คะแนน</span>
+                </div>
+
+                <button id="btn-restart" class="clickable-btn bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-400 hover:to-emerald-500 text-white font-bold py-4 px-10 rounded-full text-xl shadow-lg border border-green-400 w-full">
+                    เล่นอีกครั้ง
+                </button>
+            </div>
         </div>
     </div>
 
+    <!-- Application Logic -->
     <script>
-        // --- DATA & CONSTANTS ---
-        const SIG_FIG_DATA = [
-            { num: '0.004', count: '1' },
-            { num: '0.050', count: '2' },
-            { num: '0.00300', count: '3' },
-            { num: '1.004', count: '4' },
-            { num: '1.0040', count: '5' },
-            { num: '500', count: '1' },
-            { num: '500.', count: '3' },
-            { num: '500.0', count: '4' },
-            { num: '120', count: '2' },
-            { num: '10.02', count: '4' },
-            { num: '0.1020', count: '4' },
-            { num: '6.02 x 10²³', count: '3' },
-            { num: '3.0 x 10⁸', count: '2' },
-            { num: '8', count: '1' },
-            { num: '80.0', count: '3' },
-            { num: '0.0505', count: '3' },
-            { num: '1000', count: '1' },
-            { num: '1001', count: '4' },
-            { num: '2.50', count: '3' },
-            { num: '0.00001', count: '1' },
-            { num: '20.020', count: '5' }
-        ];
+        // --- Game State Variables ---
+        let gameState = 'INIT'; // INIT, READY, PLAYING, END
+        let score = 0;
+        let timeLeft = 45;
+        let timerInterval;
+        let currentAnswer = 0;
+        let canClick = true;
+        let answerCooldown = false;
 
-        const HOVER_TIME_REQUIRED = 1.5; // seconds
-        const GAME_TIME = 30; // seconds
+        // --- DOM Elements ---
+        const uiLoading = document.getElementById('ui-loading');
+        const uiStart = document.getElementById('ui-start');
+        const uiPlaying = document.getElementById('ui-playing');
+        const uiEnd = document.getElementById('ui-end');
+        
+        const elTime = document.getElementById('time');
+        const elScore = document.getElementById('score');
+        const elQuestion = document.getElementById('question');
+        const elFinalScore = document.getElementById('final-score');
+        const cursor = document.getElementById('cursor');
+        const gameArea = document.getElementById('game-area');
+        const videoElement = document.getElementById('webcam');
 
-        // --- GAME STATE ---
-        let state = {
-            screen: 'start', // start, game, end
-            score: 0,
-            timeLeft: 0,
-            timerInterval: null,
-            currentQuestion: null,
-            hoveredChoiceIndex: -1,
-            hoverProgress: 0, // 0 to 1
-            lastFrameTime: 0,
-            cursorX: 0,
-            cursorY: 0,
-            smoothX: null, // สำหรับการทำ Cursor Smoothing
-            smoothY: null
-        };
-
-        // --- DOM ELEMENTS ---
-        const els = {
-            screenStart: document.getElementById('screen_start'),
-            screenGame: document.getElementById('screen_game'),
-            screenEnd: document.getElementById('screen_end'),
-            btnStart: document.getElementById('btn_start'),
-            btnRestart: document.getElementById('btn_restart'),
-            loadingAi: document.getElementById('loading_ai'),
-            
-            scoreDisplay: document.getElementById('score_display'),
-            timeDisplay: document.getElementById('time_display'),
-            questionText: document.getElementById('question_text'),
-            questionBox: document.getElementById('question_box'),
-            
-            choices: [
-                document.getElementById('choice_0'),
-                document.getElementById('choice_1'),
-                document.getElementById('choice_2'),
-                document.getElementById('choice_3')
-            ],
-            choiceTexts: document.querySelectorAll('.choice-text'),
-            progressBars: document.querySelectorAll('.progress-bar'),
-            
-            handCursor: document.getElementById('hand_cursor'),
-            gameContainer: document.getElementById('game_container'),
-            effectsContainer: document.getElementById('effects_container'),
-            finalScore: document.getElementById('final_score')
-        };
-
-        // --- AUDIO SYSTEM (Web Audio API) ---
-        const AudioContext = window.AudioContext || window.webkitAudioContext;
-        const audioCtx = new AudioContext();
-
+        // --- Audio Synthesizer (No external assets needed) ---
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
         function playTone(freq, type, duration, vol = 0.1) {
             if (audioCtx.state === 'suspended') audioCtx.resume();
             const osc = audioCtx.createOscillator();
-            const gain = audioCtx.createGain();
+            const gainNode = audioCtx.createGain();
             osc.type = type;
-            osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
-            gain.gain.setValueAtTime(vol, audioCtx.currentTime);
-            gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + duration);
-            osc.connect(gain);
-            gain.connect(audioCtx.destination);
+            osc.frequency.value = freq;
+            
+            osc.connect(gainNode);
+            gainNode.connect(audioCtx.destination);
+            
             osc.start();
+            gainNode.gain.setValueAtTime(vol, audioCtx.currentTime);
+            gainNode.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + duration);
             osc.stop(audioCtx.currentTime + duration);
         }
 
-        const sfx = {
-            correct: () => {
-                playTone(600, 'sine', 0.1, 0.1);
-                setTimeout(() => playTone(800, 'sine', 0.2, 0.15), 100);
-                setTimeout(() => playTone(1200, 'sine', 0.3, 0.2), 200);
-            },
-            wrong: () => {
-                playTone(200, 'sawtooth', 0.3, 0.2);
-                setTimeout(() => playTone(150, 'sawtooth', 0.4, 0.2), 150);
-            },
-            tick: () => playTone(1000, 'sine', 0.05, 0.05),
-            hover: () => playTone(400, 'sine', 0.1, 0.02),
-            gameover: () => {
-                playTone(400, 'square', 0.3, 0.1);
-                setTimeout(() => playTone(300, 'square', 0.5, 0.1), 300);
-            }
-        };
+        // --- Significant Figures Logic Generator ---
+        function generateQuestion() {
+            // Rules for generators to ensure exact clarity and no ambiguity
+            const generators = [
+                () => { // 1. All non-zero digits (e.g. 452 -> 3)
+                    const len = Math.floor(Math.random() * 4) + 1; // 1 to 4 digits
+                    let str = '';
+                    for(let i=0; i<len; i++) str += Math.floor(Math.random() * 9) + 1;
+                    return { q: str, a: len };
+                },
+                () => { // 2. Zeros between non-zeros (e.g. 405 -> 3)
+                    let first = Math.floor(Math.random() * 9) + 1;
+                    let last = Math.floor(Math.random() * 9) + 1;
+                    let zeros = '0'.repeat(Math.floor(Math.random() * 2) + 1); // 1 or 2 zeros
+                    return { q: first + zeros + last, a: 2 + zeros.length };
+                },
+                () => { // 3. Leading zeros (e.g. 0.045 -> 2)
+                    let len = Math.floor(Math.random() * 3) + 1; // 1 to 3 non-zero
+                    let str = '';
+                    for(let i=0; i<len; i++) str += Math.floor(Math.random() * 9) + 1;
+                    let zeros = '0'.repeat(Math.floor(Math.random() * 3) + 1); // 1 to 3 zeros
+                    return { q: '0.' + zeros + str, a: len };
+                },
+                () => { // 4. Trailing zeros in decimal (e.g. 4.50 -> 3)
+                    let first = Math.floor(Math.random() * 9) + 1;
+                    let dec = Math.floor(Math.random() * 9) + 1;
+                    let zeros = '0'.repeat(Math.floor(Math.random() * 2) + 1);
+                    return { q: first + '.' + dec + zeros, a: 2 + zeros.length };
+                },
+                () => { // 5. Combination of leading and trailing (e.g. 0.050 -> 2)
+                    let leadZ = '0.0' + '0'.repeat(Math.floor(Math.random() * 2));
+                    let num = Math.floor(Math.random() * 9) + 1;
+                    let trailZ = '0'.repeat(Math.floor(Math.random() * 2) + 1);
+                    return { q: leadZ + num + trailZ, a: 1 + trailZ.length };
+                }
+            ];
+            // Pick a random generator
+            return generators[Math.floor(Math.random() * generators.length)]();
+        }
 
-        // --- GAME LOGIC ---
+        // --- Game Flow Control ---
+        function switchUI(state) {
+            uiLoading.classList.add('hidden');
+            uiStart.classList.add('hidden');
+            uiPlaying.classList.add('hidden');
+            uiEnd.classList.add('hidden');
 
-        function initGame() {
-            els.btnStart.addEventListener('click', startGame);
-            els.btnRestart.addEventListener('click', startGame);
+            gameState = state;
+            if (state === 'READY') uiStart.classList.remove('hidden');
+            if (state === 'PLAYING') uiPlaying.classList.remove('hidden');
+            if (state === 'END') uiEnd.classList.remove('hidden');
+        }
+
+        function loadNextQuestion() {
+            const data = generateQuestion();
+            elQuestion.innerText = data.q;
+            currentAnswer = data.a;
         }
 
         function startGame() {
-            state.score = 0;
-            state.timeLeft = GAME_TIME;
-            updateUI();
-            
-            els.screenStart.classList.add('hidden');
-            els.screenEnd.classList.add('hidden');
-            els.screenGame.classList.remove('hidden');
-            state.screen = 'game';
-
             if(audioCtx.state === 'suspended') audioCtx.resume();
-
-            generateQuestion();
+            playTone(800, 'sine', 0.2); // Start sound
             
-            clearInterval(state.timerInterval);
-            state.timerInterval = setInterval(() => {
-                state.timeLeft--;
-                if(state.timeLeft <= 10 && state.timeLeft > 0) sfx.tick();
+            score = 0;
+            timeLeft = 45;
+            elScore.innerText = score;
+            elTime.innerText = timeLeft;
+            
+            switchUI('PLAYING');
+            loadNextQuestion();
+
+            timerInterval = setInterval(() => {
+                timeLeft--;
+                elTime.innerText = timeLeft;
+                if (timeLeft <= 5) elTime.classList.replace('text-rose-400', 'text-red-600');
                 
-                if (state.timeLeft <= 0) {
+                if (timeLeft <= 0) {
+                    clearInterval(timerInterval);
                     endGame();
-                } else {
-                    updateUI();
                 }
             }, 1000);
         }
 
         function endGame() {
-            clearInterval(state.timerInterval);
-            state.screen = 'end';
-            state.timeLeft = 0;
-            updateUI();
-            sfx.gameover();
-            els.screenGame.classList.add('hidden');
-            els.screenEnd.classList.remove('hidden');
-            els.finalScore.innerText = state.score;
+            playTone(300, 'sawtooth', 0.5);
+            elFinalScore.innerText = score;
+            switchUI('END');
         }
 
-        function generateQuestion() {
-            // Reset hovers
-            state.hoveredChoiceIndex = -1;
-            state.hoverProgress = 0;
-            els.progressBars.forEach(pb => pb.style.width = '0%');
-            els.choices.forEach(c => c.classList.remove('hovered'));
-
-            // Pop animation for question
-            els.questionBox.style.transform = 'scale(0.8)';
-            setTimeout(() => els.questionBox.style.transform = 'scale(1)', 150);
-
-            // Determine question mode (0 = ask for count given number, 1 = ask for number given count)
-            const mode = Math.random() > 0.5 ? 0 : 1;
+        function submitAnswer(ans, buttonElement) {
+            if (answerCooldown) return;
             
-            let correctItem = SIG_FIG_DATA[Math.floor(Math.random() * SIG_FIG_DATA.length)];
-            let options = [];
+            answerCooldown = true;
+            // Visual click effect on button
+            buttonElement.classList.add('simulated-active');
+            setTimeout(() => buttonElement.classList.remove('simulated-active'), 150);
 
-            if (mode === 0) {
-                // Mode 0: Given a number, find count
-                els.questionText.innerHTML = `ตัวเลข <span class="text-yellow-400">${correctItem.num}</span><br>มีเลขนัยสำคัญกี่ตัว?`;
+            if (ans === currentAnswer) {
+                // Correct
+                score++;
+                elScore.innerText = score;
+                playTone(1000, 'sine', 0.1, 0.15); // High beep
                 
-                let counts = [correctItem.count];
-                while(counts.length < 4) {
-                    let r = Math.floor(Math.random() * 5) + 1 + ""; // random count 1 to 5
-                    if(!counts.includes(r)) counts.push(r);
-                }
-                
-                counts.sort(() => Math.random() - 0.5);
-                let correctOptionIndex = counts.indexOf(correctItem.count);
-                
-                state.currentQuestion = {
-                    correctIdx: correctOptionIndex,
-                    options: counts
-                };
+                // Green flash
+                gameArea.style.backgroundColor = 'rgba(34, 197, 94, 0.5)';
+                setTimeout(() => gameArea.style.backgroundColor = '#000', 150);
             } else {
-                // Mode 1: Given count, find number
-                els.questionText.innerHTML = `ข้อใดมีเลขนัยสำคัญ<br><span class="text-yellow-400">${correctItem.count} ตัว</span> ?`;
+                // Wrong
+                playTone(200, 'square', 0.2, 0.1); // Low buzz
                 
-                let nums = [correctItem.num];
-                while(nums.length < 4) {
-                    let rndItem = SIG_FIG_DATA[Math.floor(Math.random() * SIG_FIG_DATA.length)];
-                    // Ensure the wrong option has a different count and is not already in the list
-                    if(rndItem.count !== correctItem.count && !nums.includes(rndItem.num)) {
-                        nums.push(rndItem.num);
-                    }
-                }
-                
-                nums.sort(() => Math.random() - 0.5);
-                let correctOptionIndex = nums.indexOf(correctItem.num);
-                
-                state.currentQuestion = {
-                    correctIdx: correctOptionIndex,
-                    options: nums
-                };
+                // Red flash
+                gameArea.style.backgroundColor = 'rgba(239, 68, 68, 0.5)';
+                setTimeout(() => gameArea.style.backgroundColor = '#000', 150);
             }
 
-            // Update UI
-            options = state.currentQuestion.options;
-            options.forEach((opt, idx) => {
-                // Dynamic text sizing for longer string like scientific notation
-                if(opt.length > 5) {
-                    els.choiceTexts[idx].className = "choice-text text-xl md:text-3xl font-bold text-white drop-shadow-md z-10 text-center px-2";
-                } else {
-                    els.choiceTexts[idx].className = "choice-text text-3xl md:text-5xl font-bold text-white drop-shadow-md z-10 text-center";
-                }
-                els.choiceTexts[idx].innerText = opt;
+            loadNextQuestion();
+            
+            // Cooldown to prevent double accidental clicks
+            setTimeout(() => {
+                answerCooldown = false;
+            }, 600);
+        }
+
+        // --- Setup Buttons ---
+        document.querySelectorAll('.ans-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                submitAnswer(parseInt(e.target.dataset.ans), e.target);
             });
-        }
-
-        function handleAnswer(selectedIndex, x, y) {
-            // Prevent multiple triggers
-            if(state.hoverProgress < 1) return;
-            state.hoverProgress = 0; // reset instantly
-
-            const isCorrect = selectedIndex === state.currentQuestion.correctIdx;
-            
-            if (isCorrect) {
-                state.score += 2;
-                sfx.correct();
-                showFloatingText("+2", x, y, 'float-up-effect');
-                els.gameContainer.classList.remove('flash-green-effect');
-                void els.gameContainer.offsetWidth; // trigger reflow
-                els.gameContainer.classList.add('flash-green-effect');
-                
-                // Confetti!
-                confetti({
-                    particleCount: 80,
-                    spread: 70,
-                    origin: { y: 0.6 },
-                    colors: ['#38bdf8', '#facc15', '#4ade80']
-                });
-            } else {
-                state.timeLeft = Math.max(0, state.timeLeft - 5);
-                sfx.wrong();
-                showFloatingText("-5 วิ", x, y, 'float-down-effect');
-                
-                // Shake and flash red
-                els.gameContainer.classList.remove('shake-effect', 'flash-red-effect');
-                void els.gameContainer.offsetWidth;
-                els.gameContainer.classList.add('shake-effect', 'flash-red-effect');
-                
-                // Red animate time
-                els.timeDisplay.classList.add('text-red-500');
-                setTimeout(() => els.timeDisplay.classList.remove('text-red-500'), 500);
-            }
-
-            updateUI();
-            if (state.timeLeft > 0) {
-                generateQuestion();
-            } else {
-                endGame();
-            }
-        }
-
-        function showFloatingText(text, x, y, cssClass) {
-            const el = document.createElement('div');
-            el.innerText = text;
-            el.className = cssClass;
-            el.style.left = `${x}px`;
-            el.style.top = `${y}px`;
-            els.effectsContainer.appendChild(el);
-            setTimeout(() => el.remove(), 1000);
-        }
-
-        function updateUI() {
-            els.scoreDisplay.innerText = state.score;
-            els.timeDisplay.innerText = state.timeLeft;
-        }
-
-        // --- MEDIAPIPE & CAMERA INTEGRATION ---
-        const videoElement = document.getElementById('input_video');
-        const canvasElement = document.getElementById('output_canvas');
-        const canvasCtx = canvasElement.getContext('2d');
-
-        function onResults(results) {
-            // Draw video to canvas (mirrored via CSS, so we draw normally here)
-            canvasCtx.save();
-            canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
-            canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
-
-            if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
-                // Draw skeleton (optional, but looks cool)
-                for (const landmarks of results.multiHandLandmarks) {
-                    drawConnectors(canvasCtx, landmarks, HAND_CONNECTIONS, {color: '#ffffff30', lineWidth: 2});
-                    drawLandmarks(canvasCtx, landmarks, {color: '#38bdf880', lineWidth: 1, radius: 2});
-                }
-
-                // Game interaction logic
-                if (state.screen === 'game') {
-                    // Get index finger tip (landmark 8)
-                    const indexFinger = results.multiHandLandmarks[0][8];
-                    
-                    // 1. คำนวณชดเชยสัดส่วนภาพ Object-Cover
-                    const cw = els.gameContainer.offsetWidth;
-                    const ch = els.gameContainer.offsetHeight;
-                    const vw = canvasElement.width;
-                    const vh = canvasElement.height;
-
-                    const scale = Math.max(cw / vw, ch / vh);
-                    const drawnW = vw * scale;
-                    const drawnH = vh * scale;
-
-                    const offsetX = (cw - drawnW) / 2;
-                    const offsetY = (ch - drawnH) / 2;
-
-                    // คำนวณพิกัดเป้าหมาย (กลับซ้ายขวาแล้ว)
-                    const targetX = offsetX + (1 - indexFinger.x) * drawnW;
-                    const targetY = offsetY + indexFinger.y * drawnH;
-
-                    // 2. Cursor Smoothing (ป้องกันเป้าสั่น)
-                    if (state.smoothX === null) {
-                        state.smoothX = targetX;
-                        state.smoothY = targetY;
-                    }
-                    // ค่า 0.3 คือความสมูท (น้อย = สมูทมากแต่ตามช้า, มาก = ไวแต่สั่น)
-                    state.smoothX += (targetX - state.smoothX) * 0.3;
-                    state.smoothY += (targetY - state.smoothY) * 0.3;
-
-                    const mappedX = state.smoothX;
-                    const mappedY = state.smoothY;
-
-                    state.cursorX = mappedX;
-                    state.cursorY = mappedY;
-
-                    // Update cursor UI
-                    els.handCursor.style.left = `${mappedX}px`;
-                    els.handCursor.style.top = `${mappedY}px`;
-                    els.handCursor.classList.remove('hidden');
-
-                    // Check collisions with choices
-                    let foundHover = -1;
-                    els.choices.forEach((choiceEl, idx) => {
-                        const rect = choiceEl.getBoundingClientRect();
-                        const containerRect = els.gameContainer.getBoundingClientRect();
-                        
-                        // Relative rects
-                        const relRect = {
-                            left: rect.left - containerRect.left,
-                            right: rect.right - containerRect.left,
-                            top: rect.top - containerRect.top,
-                            bottom: rect.bottom - containerRect.top
-                        };
-
-                        if (mappedX >= relRect.left && mappedX <= relRect.right &&
-                            mappedY >= relRect.top && mappedY <= relRect.bottom) {
-                            foundHover = idx;
-                        }
-                    });
-
-                    // Time delta calculation
-                    const now = performance.now();
-                    const dt = (now - state.lastFrameTime) / 1000;
-                    state.lastFrameTime = now;
-
-                    // Hover logic
-                    if (foundHover !== -1) {
-                        if (state.hoveredChoiceIndex === foundHover) {
-                            // Continue hovering
-                            state.hoverProgress += dt / HOVER_TIME_REQUIRED;
-                            
-                            // Visual feedback
-                            els.choices[foundHover].classList.add('hovered');
-                            els.progressBars[foundHover].style.width = `${Math.min(state.hoverProgress * 100, 100)}%`;
-
-                            if(state.hoverProgress >= 1.0) {
-                                handleAnswer(foundHover, mappedX, mappedY);
-                            }
-                        } else {
-                            // New hover started
-                            sfx.hover();
-                            resetHovers();
-                            state.hoveredChoiceIndex = foundHover;
-                            state.hoverProgress = 0;
-                        }
-                    } else {
-                        // Not hovering any
-                        resetHovers();
-                    }
-                }
-            } else {
-                els.handCursor.classList.add('hidden');
-                // Reset smoothing when hand is lost
-                state.smoothX = null;
-                state.smoothY = null;
-                resetHovers();
-                state.lastFrameTime = performance.now();
-            }
-            canvasCtx.restore();
-        }
-
-        function resetHovers() {
-            state.hoveredChoiceIndex = -1;
-            state.hoverProgress = 0;
-            els.progressBars.forEach(pb => pb.style.width = '0%');
-            els.choices.forEach(c => c.classList.remove('hovered'));
-        }
-
-        // Initialize MediaPipe Hands
-        const hands = new Hands({locateFile: (file) => {
-            return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
-        }});
-        
-        hands.setOptions({
-            maxNumHands: 1,
-            modelComplexity: 1,
-            minDetectionConfidence: 0.75, // เพิ่มความแม่นยำในการตรวจจับมือครั้งแรก (ลดการจับพลาด)
-            minTrackingConfidence: 0.75  // เพิ่มความแม่นยำในการติดตามมือ
         });
-        
-        hands.onResults(onResults);
 
-        // Setup Camera
+        document.getElementById('btn-start').addEventListener('click', startGame);
+        document.getElementById('btn-restart').addEventListener('click', startGame);
+
+        // --- Simulate Click with coordinates ---
+        function simulateMouthClick(x, y) {
+            playTone(600, 'sine', 0.05, 0.05); // Small click sound
+            
+            // Get bounding box of game area to map absolute coordinates
+            const rect = gameArea.getBoundingClientRect();
+            const globalX = rect.left + x;
+            const globalY = rect.top + y;
+            
+            // Find element at coordinates
+            const elements = document.elementsFromPoint(globalX, globalY);
+            for (let el of elements) {
+                if (el.classList.contains('clickable-btn')) {
+                    el.click(); // Trigger native click event
+                    break;
+                }
+            }
+        }
+
+        // --- MediaPipe FaceMesh Setup ---
+        const faceMesh = new FaceMesh({locateFile: (file) => {
+            return `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`;
+        }});
+
+        faceMesh.setOptions({
+            maxNumFaces: 1,
+            refineLandmarks: true,
+            minDetectionConfidence: 0.6,
+            minTrackingConfidence: 0.6
+        });
+
+        faceMesh.onResults((results) => {
+            // Remove loading screen when first result arrives
+            if (gameState === 'INIT') {
+                switchUI('READY');
+            }
+
+            if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
+                cursor.style.display = 'block';
+                const landmarks = results.multiFaceLandmarks[0];
+
+                // 1. Map Nose Tip (Landmark 1) to Cursor Position
+                const nose = landmarks[1];
+                // Mirror X axis because camera is mirrored
+                const cursorX = (1 - nose.x) * gameArea.clientWidth; 
+                const cursorY = nose.y * gameArea.clientHeight;
+
+                cursor.style.left = `${cursorX}px`;
+                cursor.style.top = `${cursorY}px`;
+
+                // 2. Detect Mouth Open State
+                // Upper lip (13), Lower lip (14), Top Head (10), Chin (152)
+                const faceTopY = landmarks[10].y;
+                const faceBottomY = landmarks[152].y;
+                const faceHeight = Math.abs(faceTopY - faceBottomY);
+                
+                const upperLipY = landmarks[13].y;
+                const lowerLipY = landmarks[14].y;
+                const mouthDistance = Math.abs(upperLipY - lowerLipY);
+                
+                // Ratio of mouth opening relative to face size (makes it robust to distance)
+                const mouthRatio = mouthDistance / faceHeight;
+
+                // Threshold for open mouth
+                if (mouthRatio > 0.065) {
+                    cursor.classList.add('mouth-open');
+                    if (canClick) {
+                        simulateMouthClick(cursorX, cursorY);
+                        canClick = false; // Lock clicking until mouth closes
+                    }
+                } else {
+                    cursor.classList.remove('mouth-open');
+                    canClick = true; // Unlock clicking
+                }
+
+                // Visual feedback if hovering over a button
+                if (gameState === 'PLAYING' || gameState === 'READY' || gameState === 'END') {
+                     const rect = gameArea.getBoundingClientRect();
+                     const elements = document.elementsFromPoint(rect.left + cursorX, rect.top + cursorY);
+                     let hoveringBtn = false;
+                     for (let el of elements) {
+                        if (el.classList.contains('clickable-btn')) {
+                            el.classList.add('simulated-hover');
+                            hoveringBtn = el;
+                        } else if(el.classList && el.classList.remove) {
+                            // clean up others
+                        }
+                     }
+                     // Remove hover state from all other buttons
+                     document.querySelectorAll('.clickable-btn').forEach(btn => {
+                         if(btn !== hoveringBtn) btn.classList.remove('simulated-hover');
+                     });
+                }
+
+            } else {
+                cursor.style.display = 'none'; // Hide if no face detected
+            }
+        });
+
+        // Initialize Camera
         const camera = new Camera(videoElement, {
             onFrame: async () => {
-                // Ensure canvas size matches video size logically
-                if (canvasElement.width !== videoElement.videoWidth) {
-                    canvasElement.width = videoElement.videoWidth;
-                    canvasElement.height = videoElement.videoHeight;
-                }
-                await hands.send({image: videoElement});
+                await faceMesh.send({image: videoElement});
             },
-            width: 1280,
-            height: 720
+            width: 640,
+            height: 480
         });
-
-        // Start Camera and allow user to start
-        camera.start()
-            .then(() => {
-                els.loadingAi.classList.add('hidden');
-                els.btnStart.classList.remove('hidden');
-            })
-            .catch(err => {
-                els.loadingAi.innerHTML = `<p class="text-red-400">ไม่สามารถเข้าถึงกล้องได้ กรุณาอนุญาตการใช้งานกล้องและรีเฟรชหน้าจอ</p>`;
-                console.error(err);
-            });
-
-        // Init bindings
-        initGame();
+        camera.start();
 
     </script>
 </body>
